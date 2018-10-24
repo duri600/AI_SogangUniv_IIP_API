@@ -1,0 +1,9 @@
+﻿  ProcBuffers.cpp
+ProcBuffers.cpp(358): warning C4101: 'ch' :참조되지 않은 지역 변수입니다.
+  코드를 생성하고 있습니다.
+  135 of 910 functions (14.8%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    40 functions had inline decision re-evaluated but remain unchanged
+  코드를 생성했습니다.
+  AI_project.vcxproj -> F:\Projects\AI\Code\AI_project\x64\Release\AI_project.exe
+  AI_project.vcxproj -> F:\Projects\AI\Code\AI_project\x64\Release\AI_project.pdb (Full PDB)
