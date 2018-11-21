@@ -802,7 +802,6 @@ void SNMF::synth_ifft_buff(double *TF_input, double *TF_phase, double *s_buff)
 }
 
 
-//»ûº° 513:size_basis
 void SNMF::blk_sparse(double **X, double **D, int l, double *Q)
 {
 	double *SNR_local;
