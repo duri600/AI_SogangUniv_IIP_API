@@ -11,7 +11,7 @@
 #include <armadillo>
 
 using namespace std;
-//using namespace arma;
+using namespace arma;
 
 SNMF::SNMF()
 {
@@ -908,25 +908,25 @@ void SNMF::sparse_nmf(double** input_mat, double** init_w, double** init_h, int 
 		}
 	}
 
-	arma::mat v = arma::mat(in_mat, m, n);
-	arma::mat w = arma::mat(in_w, m, rank, false);
-	arma::mat h = arma::mat(in_h, rank, n, false);
-	arma::mat wn;
-	arma::mat sum1, sum1_t;
-	arma::mat sum3;
-	arma::mat wnn_n;
-	arma::mat w_h_mul;
-	arma::mat lambda;
-	arma::mat dph, dmh, dpw, dmw;
-	arma::mat w_s;
+	mat v = mat(in_mat, m, n);
+	mat w = mat(in_w, m, rank, false);
+	mat h = mat(in_h, rank, n, false);
+	mat wn;
+	mat sum1, sum1_t;
+	mat sum3;
+	mat wnn_n;
+	mat w_h_mul;
+	mat lambda;
+	mat dph, dmh, dpw, dmw;
+	mat w_s;
 	double flr = 1e-9;
 	double div_db, cost_db, last_cost = 1e+100;
-	arma::mat p_sparsity = 5 * arma::ones<arma::mat>(rank, n);
-	arma::mat div = arma::zeros<arma::mat>(1, max_itera);
-	arma::mat cost = arma::zeros<arma::mat>(1, max_itera);
+	mat p_sparsity = 5 * ones<mat>(rank, n);
+	mat div = zeros<mat>(1, max_itera);
+	mat cost = zeros<mat>(1, max_itera);
 
-	arma::mat w_pow = pow(w, 2);
-	arma::mat w_pow_sum = sum(w_pow);
+	mat w_pow = pow(w, 2);
+	mat w_pow_sum = sum(w_pow);
 	wn = sqrt(w_pow_sum);
 	w = w.each_row() / wn;
 	h = h.each_col() % wn.t();

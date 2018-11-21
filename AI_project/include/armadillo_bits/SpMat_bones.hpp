@@ -271,6 +271,12 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   arma_inline arma_warn_unused bool is_square() const;
        inline arma_warn_unused bool is_finite() const;
   
+  inline arma_warn_unused bool is_symmetric() const;
+  inline arma_warn_unused bool is_symmetric(const typename get_pod_type<eT>::result tol) const;
+  
+  inline arma_warn_unused bool is_hermitian() const;
+  inline arma_warn_unused bool is_hermitian(const typename get_pod_type<eT>::result tol) const;
+  
   inline arma_warn_unused bool has_inf() const;
   inline arma_warn_unused bool has_nan() const;
   
@@ -341,6 +347,15 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   
   inline void reset();
   
+  //! don't use this unless you're writing internal Armadillo code
+  inline void reserve(const uword in_rows, const uword in_cols, const uword new_n_nonzero);
+  
+  //! don't use this unless you're writing internal Armadillo code
+  inline SpMat(const arma_reserve_indicator&, const uword in_rows, const uword in_cols, const uword new_n_nonzero);
+  
+  //! don't use this unless you're writing internal Armadillo code
+  template<typename eT2>
+  inline SpMat(const arma_layout_indicator&, const SpMat<eT2>& x);
   
   template<typename T1> inline void set_real(const SpBase<pod_type,T1>& X);
   template<typename T1> inline void set_imag(const SpBase<pod_type,T1>& X);
@@ -538,8 +553,14 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   inline       col_iterator begin_col(const uword col_num);
   inline const_col_iterator begin_col(const uword col_num) const;
   
+  inline       col_iterator begin_col_no_sync(const uword col_num);
+  inline const_col_iterator begin_col_no_sync(const uword col_num) const;
+  
   inline       col_iterator end_col(const uword col_num);
   inline const_col_iterator end_col(const uword col_num) const;
+  
+  inline       col_iterator end_col_no_sync(const uword col_num);
+  inline const_col_iterator end_col_no_sync(const uword col_num) const;
   
   inline       row_iterator begin_row(const uword row_num = 0);
   inline const_row_iterator begin_row(const uword row_num = 0) const;
@@ -583,14 +604,20 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   template<              typename T1, typename Functor> arma_hot inline void init_xform   (const SpBase<eT, T1>& x, const Functor& func);
   template<typename eT2, typename T1, typename Functor> arma_hot inline void init_xform_mt(const SpBase<eT2,T1>& x, const Functor& func);
   
+  //! don't use this unless you're writing internal Armadillo code
+  arma_inline bool is_alias(const SpMat<eT>& X) const;
+  
   
   protected:
   
-  inline void init(uword in_rows, uword in_cols);
+  inline void                init(uword in_rows, uword in_cols, const uword new_n_nonzero = 0);
+  inline void arma_cold init_cold(uword in_rows, uword in_cols, const uword new_n_nonzero = 0);
+  
   inline void init(const std::string& text);
   inline void init(const  SpMat<eT>& x);
   inline void init(const MapMat<eT>& x);
   
+  inline void init_simple(const SpMat<eT>& x);
   
   inline void init_batch_std(const Mat<uword>& locations, const Mat<eT>& values, const bool sort_locations);
   inline void init_batch_add(const Mat<uword>& locations, const Mat<eT>& values, const bool sort_locations);
@@ -601,15 +628,11 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   
   private:
   
-  inline arma_hot arma_warn_unused SpValProxy<SpMat<eT> > get_value(const uword i);
-  inline arma_hot arma_warn_unused eT                     get_value(const uword i) const;
+  inline arma_hot arma_warn_unused eT get_value(const uword i                         ) const;
+  inline arma_hot arma_warn_unused eT get_value(const uword in_row, const uword in_col) const;
   
-  inline arma_hot arma_warn_unused SpValProxy<SpMat<eT> > get_value(const uword in_row, const uword in_col);
-  inline arma_hot arma_warn_unused eT                     get_value(const uword in_row, const uword in_col) const;
-  
-  
-  arma_inline arma_hot arma_warn_unused uword get_position(const uword i) const;
-  arma_inline arma_hot                  void  get_position(const uword i, uword& row_of_i, uword& col_of_i) const;
+  inline arma_hot arma_warn_unused eT get_value_csc(const uword i                         ) const;
+  inline arma_hot arma_warn_unused eT get_value_csc(const uword in_row, const uword in_col) const;
   
   
   inline arma_warn_unused eT&  insert_element(const uword in_row, const uword in_col, const eT in_val = eT(0));
@@ -624,7 +647,7 @@ class SpMat : public SpBase< eT, SpMat<eT> >
   // 1: CSC needs to be updated from cache
   // 2: no update required
   
-  #if !defined(ARMA_USE_OPENMP) && defined(ARMA_USE_CXX11)
+  #if defined(ARMA_USE_CXX11)
   arma_aligned mutable std::mutex cache_mutex;
   #endif
   

@@ -50,7 +50,6 @@ ProcBuffers::ProcBuffers()
 	rtIVA = new realtime_IVA();
 	m_snmf = new SNMF();
 	f_snmf = new SNMF();
-	int total_stack = tr_sec * SamplingFreq;
 
 	Input = new double *[Nch];
 	for (ch = 0; ch < Nch; ch++)
@@ -232,19 +231,23 @@ ProcBuffers::~ProcBuffers()
 
 }
 
-void ProcBuffers::Process(double**input)
+void ProcBuffers::Process(double**input, int type)
 {
 	FILE *nFile;
 	static int Process_count = 0;
 	static int VAD_count = 0;
 	static int BuffCnt = 0, isNew16k = 0;
 	int EPDcase, ch, i, j;
-	int total_stack = tr_sec * SamplingFreq;
+	char mat_name[50] = "basis_mat_type";
+	char type_char[5];
+	sprintf(type_char, "%d", type);
+	strcat(mat_name, type_char);
+	strcat(mat_name, ".txt");
 
 	if (Process_count == 0)
 	{
 
-		nFile = fopen("basis_mat.txt", "rt");
+		nFile = fopen(mat_name, "rt");
 		if (nFile != NULL)
 		{
 			for (i = 0; i < size_basis; i++)
@@ -281,7 +284,7 @@ void ProcBuffers::Process(double**input)
 
 		}
 	}
-	for (ch = 0; ch < Nch; ch++) //NMF input
+	for (ch = 0; ch < Nch; ch++) //input
 	{
 		for (i = 0; i < 3 * BufferSize; i++)
 		{

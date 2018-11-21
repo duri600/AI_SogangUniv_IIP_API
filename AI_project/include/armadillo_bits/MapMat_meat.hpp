@@ -25,9 +25,7 @@ MapMat<eT>::~MapMat()
   {
   arma_extra_debug_sigprint_this(this);
   
-  reset();
-  
-  if(map_ptr)  { delete map_ptr; }
+  if(map_ptr)  { (*map_ptr).clear();  delete map_ptr; }
   
   // try to expose buggy user code that accesses deleted objects
   if(arma_config::debug)  { map_ptr = NULL; }
@@ -230,7 +228,11 @@ MapMat<eT>::reset()
   {
   arma_extra_debug_sigprint();
   
-  init_warm(0, 0);
+  access::rw(n_rows) = 0;
+  access::rw(n_cols) = 0;
+  access::rw(n_elem) = 0;
+  
+  if((*map_ptr).empty() == false)  { (*map_ptr).clear(); }
   }
 
 
@@ -424,7 +426,7 @@ MapMat<eT>::operator[](const uword index)
 
 
 template<typename eT>
-arma_inline
+inline
 arma_warn_unused
 eT
 MapMat<eT>::operator[](const uword index) const
@@ -453,7 +455,7 @@ MapMat<eT>::operator()(const uword index)
 
 
 template<typename eT>
-arma_inline
+inline
 arma_warn_unused
 eT
 MapMat<eT>::operator()(const uword index) const
@@ -484,7 +486,7 @@ MapMat<eT>::at(const uword in_row, const uword in_col)
 
 
 template<typename eT>
-arma_inline
+inline
 arma_warn_unused
 eT
 MapMat<eT>::at(const uword in_row, const uword in_col) const
@@ -517,7 +519,7 @@ MapMat<eT>::operator()(const uword in_row, const uword in_col)
 
 
 template<typename eT>
-arma_inline
+inline
 arma_warn_unused
 eT
 MapMat<eT>::operator()(const uword in_row, const uword in_col) const
@@ -798,7 +800,7 @@ MapMat<eT>::init_warm(const uword in_n_rows, const uword in_n_cols)
   access::rw(n_cols) = in_n_cols;
   access::rw(n_elem) = new_n_elem;
   
-  if( (new_n_elem == 0) && ((*map_ptr).empty() == false) )  { (*map_ptr).clear(); }
+  if(new_n_elem == 0)  { (*map_ptr).clear(); }
   }
 
 
@@ -883,6 +885,38 @@ MapMat_val<eT>::operator eT() const
   const MapMat<eT>& const_parent = parent;
   
   return const_parent.operator[](index);
+  }
+
+
+
+template<typename eT>
+arma_inline
+typename get_pod_type<eT>::result
+MapMat_val<eT>::real() const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  const MapMat<eT>& const_parent = parent;
+  
+  return T( access::tmp_real( const_parent.operator[](index) ) );
+  }
+
+
+
+template<typename eT>
+arma_inline
+typename get_pod_type<eT>::result
+MapMat_val<eT>::imag() const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  const MapMat<eT>& const_parent = parent;
+  
+  return T( access::tmp_imag( const_parent.operator[](index) ) );
   }
 
 
@@ -1098,22 +1132,46 @@ SpMat_MapMat_val<eT>::SpMat_MapMat_val(SpMat<eT>& in_s_parent, MapMat<eT>& in_m_
 
 
 template<typename eT>
-arma_inline
+inline
 SpMat_MapMat_val<eT>::operator eT() const
   {
   arma_extra_debug_sigprint();
   
-  const SpMat<eT>& const_s_parent = s_parent;
+  const SpMat<eT>& const_s_parent = s_parent;  // declare as const for clarity of intent
   
-  return const_s_parent.get_value(row,col);  // use the const version of get_value()
+  return const_s_parent.get_value(row,col);
+  }
+
+
+
+template<typename eT>
+inline
+typename get_pod_type<eT>::result
+SpMat_MapMat_val<eT>::real() const
+  {
+  arma_extra_debug_sigprint();
   
-  // s_parent.sync_cache();
-  // 
-  // const MapMat<eT>& const_m_parent = m_parent;
-  // 
-  // const uword index = (const_m_parent.n_rows * col) + row;
-  //   
-  // return const_m_parent.operator[](index);
+  typedef typename get_pod_type<eT>::result T;
+  
+  const SpMat<eT>& const_s_parent = s_parent;  // declare as const for clarity of intent
+  
+  return T( access::tmp_real( const_s_parent.get_value(row,col) ) );
+  }
+
+
+
+template<typename eT>
+inline
+typename get_pod_type<eT>::result
+SpMat_MapMat_val<eT>::imag() const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  const SpMat<eT>& const_s_parent = s_parent;  // declare as const for clarity of intent
+  
+  return T( access::tmp_imag( const_s_parent.get_value(row,col) ) );
   }
 
 
@@ -1457,22 +1515,46 @@ SpSubview_MapMat_val<eT>::update_n_nonzeros()
 
 
 template<typename eT>
-arma_inline
+inline
 SpSubview_MapMat_val<eT>::operator eT() const
   {
   arma_extra_debug_sigprint();
   
-  const SpMat<eT>& const_s_parent = v_parent.m;
+  const SpMat<eT>& const_s_parent = v_parent.m;  // declare as const for clarity of intent
   
-  return const_s_parent.get_value(row,col);  // use the const version of get_value()
+  return const_s_parent.get_value(row,col);
+  }
+
+
+
+template<typename eT>
+inline
+typename get_pod_type<eT>::result
+SpSubview_MapMat_val<eT>::real() const
+  {
+  arma_extra_debug_sigprint();
   
-  // v_parent.m.sync_cache();
-  // 
-  // const MapMat<eT>& const_m_parent = m_parent;
-  // 
-  // const uword index = (const_m_parent.n_rows * col) + row;
-  //   
-  // return const_m_parent.operator[](index);
+  typedef typename get_pod_type<eT>::result T;
+  
+  const SpMat<eT>& const_s_parent = v_parent.m;  // declare as const for clarity of intent
+  
+  return T( access::tmp_real( const_s_parent.get_value(row,col) ) );
+  }
+
+
+
+template<typename eT>
+inline
+typename get_pod_type<eT>::result
+SpSubview_MapMat_val<eT>::imag() const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  const SpMat<eT>& const_s_parent = v_parent.m;  // declare as const for clarity of intent
+  
+  return T( access::tmp_imag( const_s_parent.get_value(row,col) ) );
   }
 
 

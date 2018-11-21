@@ -170,7 +170,7 @@
     #error "*** newer compiler required ***"
   #endif
   
-  #if (ARMA_GCC_VERSION < 40600)
+  #if (ARMA_GCC_VERSION < 40800)
     #undef  ARMA_PRINT_CXX98_WARNING
     #define ARMA_PRINT_CXX98_WARNING
   #endif
@@ -387,6 +387,11 @@
   #pragma warning(disable: 4714)  // __forceinline can't be inlined
   #pragma warning(disable: 4800)  // value forced to bool
   
+  #if defined(ARMA_USE_CXX11)
+    #pragma warning(disable: 4519)  // default template args are only allowed on a class template
+  #endif
+  
+  
   // #if (_MANAGED == 1) || (_M_CEE == 1)
   //   
   //   // don't do any alignment when compiling in "managed code" mode 
@@ -458,9 +463,8 @@
 
 
 #if ( defined(ARMA_USE_OPENMP) && (!defined(_OPENMP) || (defined(_OPENMP) && (_OPENMP < 201107))) )
-  // we require OpenMP 3.0 to enable parallelisation of for loops with unsigned integers;
-  // earlier versions of OpenMP can only handle signed integers;
-  // we require OpenMP 3.1 for atomic read and atomic write
+  // OpenMP 3.1 required for atomic read and atomic write
+  // OpenMP 3.0 required for parallelisation of loops with unsigned integers
   #undef  ARMA_USE_OPENMP
   #undef  ARMA_PRINT_OPENMP_WARNING
   #define ARMA_PRINT_OPENMP_WARNING
@@ -541,3 +545,12 @@
   #pragma message ("WARNING: detected 'min' and/or 'max' macros and undefined them;")
   #pragma message ("WARNING: you may wish to define NOMINMAX before including any windows header")
 #endif
+
+
+
+//
+// handle more stupid macros
+// https://sourceware.org/bugzilla/show_bug.cgi?id=19239
+
+#undef minor
+#undef major

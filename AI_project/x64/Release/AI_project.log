@@ -1,9 +1,16 @@
-﻿  ProcBuffers.cpp
-ProcBuffers.cpp(358): warning C4101: 'ch' :참조되지 않은 지역 변수입니다.
+﻿  SNMF.cpp
+CL : warning : use of OpenMP disabled; compiler support for OpenMP 3.1+ not detected
+SNMF.cpp(166): warning C4101: 'j' :참조되지 않은 지역 변수입니다.
+SNMF.cpp(415): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+SNMF.cpp(430): warning C4244: '인수': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+SNMF.cpp(607): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+SNMF.cpp(811): warning C4244: '초기화 중': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+SNMF.cpp(1040): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+SNMF.cpp(1038): warning C4101: 'random' :참조되지 않은 지역 변수입니다.
   코드를 생성하고 있습니다.
-  135 of 910 functions (14.8%) were compiled, the rest were copied from previous compilation.
+  169 of 969 functions (17.4%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    40 functions had inline decision re-evaluated but remain unchanged
+    113 functions had inline decision re-evaluated but remain unchanged
   코드를 생성했습니다.
   AI_project.vcxproj -> F:\Projects\AI\Code\AI_project\x64\Release\AI_project.exe
   AI_project.vcxproj -> F:\Projects\AI\Code\AI_project\x64\Release\AI_project.pdb (Full PDB)

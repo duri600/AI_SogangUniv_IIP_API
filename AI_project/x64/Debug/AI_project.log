@@ -1,11 +1,2 @@
 ﻿  SNMF.cpp
-CL : warning : use of OpenMP disabled; compiler support for OpenMP 3.1+ not detected
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(166): warning C4101: 'j' :참조되지 않은 지역 변수입니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(382): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(397): warning C4244: '인수': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(574): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(958): warning C4244: '초기화 중': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(1187): warning C4244: '인수': 'time_t'에서 'unsigned int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
-f:\projects\ai\code\ai_project_v11\ai_project\snmf.cpp(1185): warning C4101: 'random' :참조되지 않은 지역 변수입니다.
-  AI_project.vcxproj -> F:\Projects\AI\Code\AI_project_v11\x64\Debug\AI_project.exe
-  AI_project.vcxproj -> F:\Projects\AI\Code\AI_project_v11\x64\Debug\AI_project.pdb (Full PDB)
+f:\projects\ai\code\ai_project\ai_project\snmf.cpp(11): fatal error C1083: 포함 파일을 열 수 없습니다. 'armadillo': No such file or directory

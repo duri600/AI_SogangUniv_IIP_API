@@ -29,19 +29,13 @@ SpMat<eT>::SpMat()
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(memory::acquire_chunked<eT>(1))
-  , row_indices(memory::acquire_chunked<uword>(1))
-  , col_ptrs(memory::acquire<uword>(2))
+  , values(NULL)
+  , row_indices(NULL)
+  , col_ptrs(NULL)
   {
   arma_extra_debug_sigprint_this(this);
   
-  invalidate_cache();
-  
-  access::rw(values[0]) = 0;
-  access::rw(row_indices[0]) = 0;
-  
-  access::rw(col_ptrs[0]) = 0; // No elements.
-  access::rw(col_ptrs[1]) = std::numeric_limits<uword>::max();
+  init_cold(0,0);
   }
 
 
@@ -79,7 +73,7 @@ SpMat<eT>::SpMat(const uword in_rows, const uword in_cols)
   {
   arma_extra_debug_sigprint_this(this);
 
-  init(in_rows, in_cols);
+  init_cold(in_rows, in_cols);
   }
 
 
@@ -98,7 +92,53 @@ SpMat<eT>::SpMat(const SizeMat& s)
   {
   arma_extra_debug_sigprint_this(this);
   
-  init(s.n_rows, s.n_cols);
+  init_cold(s.n_rows, s.n_cols);
+  }
+
+
+
+template<typename eT>
+inline
+SpMat<eT>::SpMat(const arma_reserve_indicator&, const uword in_rows, const uword in_cols, const uword new_n_nonzero)
+  : n_rows(0)
+  , n_cols(0)
+  , n_elem(0)
+  , n_nonzero(0)
+  , vec_state(0)
+  , values(NULL)
+  , row_indices(NULL)
+  , col_ptrs(NULL)
+  {
+  arma_extra_debug_sigprint_this(this);
+  
+  init_cold(in_rows, in_cols, new_n_nonzero);
+  }
+
+
+
+template<typename eT>
+template<typename eT2>
+inline
+SpMat<eT>::SpMat(const arma_layout_indicator&, const SpMat<eT2>& x)
+  : n_rows(0)
+  , n_cols(0)
+  , n_elem(0)
+  , n_nonzero(0)
+  , vec_state(0)
+  , values(NULL)
+  , row_indices(NULL)
+  , col_ptrs(NULL)
+  {
+  arma_extra_debug_sigprint_this(this);
+  
+  init_cold(x.n_rows, x.n_cols, x.n_nonzero);
+  
+  if(x.n_nonzero == 0)  { return; }
+  
+  if(x.row_indices)  { arrayops::copy(access::rwp(row_indices), x.row_indices, x.n_nonzero + 1); }
+  if(x.col_ptrs   )  { arrayops::copy(access::rwp(col_ptrs),    x.col_ptrs,    x.n_cols    + 1); }
+  
+  // NOTE: 'values' array is not initialised
   }
 
 
@@ -293,11 +333,11 @@ SpMat<eT>::SpMat(const Base<uword,T1>& locations_expr, const Base<eT,T2>& vals_e
   arma_debug_check( (locs.n_cols != vals.n_elem), "SpMat::SpMat(): number of locations is different than number of values" );
 
   // If there are no elements in the list, max() will fail.
-  if(locs.n_cols == 0)  { init(0, 0); return; }
+  if(locs.n_cols == 0)  { init_cold(0, 0); return; }
   
   // Automatically determine size before pruning zeros.
   uvec bounds = arma::max(locs, 1);
-  init(bounds[0] + 1, bounds[1] + 1);
+  init_cold(bounds[0] + 1, bounds[1] + 1);
   
   // Ensure that there are no zeros
   const uword N_old = vals.n_elem;
@@ -368,7 +408,7 @@ SpMat<eT>::SpMat(const Base<uword,T1>& locations_expr, const Base<eT,T2>& vals_e
   arma_debug_check( (locs.n_rows != 2),           "SpMat::SpMat(): locations matrix must have two rows"                    );
   arma_debug_check( (locs.n_cols != vals.n_elem), "SpMat::SpMat(): number of locations is different than number of values" );
   
-  init(in_n_rows, in_n_cols);
+  init_cold(in_n_rows, in_n_cols);
 
   // Ensure that there are no zeros, unless the user asked not to.
   if(check_for_zeros)
@@ -440,7 +480,7 @@ SpMat<eT>::SpMat(const bool add_values, const Base<uword,T1>& locations_expr, co
   arma_debug_check( (locs.n_rows != 2),           "SpMat::SpMat(): locations matrix must have two rows"                    );
   arma_debug_check( (locs.n_cols != vals.n_elem), "SpMat::SpMat(): number of locations is different than number of values" );
   
-  init(in_n_rows, in_n_cols);
+  init_cold(in_n_rows, in_n_cols);
 
   // Ensure that there are no zeros, unless the user asked not to.
   if(check_for_zeros)
@@ -516,8 +556,6 @@ SpMat<eT>::SpMat
   {
   arma_extra_debug_sigprint_this(this);
   
-  init(in_n_rows, in_n_cols);
-  
   const unwrap<T1> rowind_tmp( rowind_expr.get_ref() );
   const unwrap<T2> colptr_tmp( colptr_expr.get_ref() );
   const unwrap<T3>   vals_tmp( values_expr.get_ref() );
@@ -530,11 +568,11 @@ SpMat<eT>::SpMat
   arma_debug_check( (colptr.is_vec() == false), "SpMat::SpMat(): given 'colptr' object is not a vector" );
   arma_debug_check( (vals.is_vec()   == false), "SpMat::SpMat(): given 'values' object is not a vector" );
   
+  // Resize to correct number of elements (this also sets n_nonzero)
+  init_cold(in_n_rows, in_n_cols, vals.n_elem);
+  
   arma_debug_check( (rowind.n_elem != vals.n_elem), "SpMat::SpMat(): number of row indices is not equal to number of values" );
   arma_debug_check( (colptr.n_elem != (n_cols+1) ), "SpMat::SpMat(): number of column pointers is not equal to n_cols+1" );
-  
-  // Resize to correct number of elements (this also sets n_nonzero)
-  mem_resize(vals.n_elem);
   
   // copy supplied values into sparse matrix -- not checked for consistency
   arrayops::copy(access::rwp(row_indices), rowind.memptr(), rowind.n_elem );
@@ -543,6 +581,9 @@ SpMat<eT>::SpMat
   
   // important: set the sentinel as well
   access::rw(col_ptrs[n_cols + 1]) = std::numeric_limits<uword>::max();
+  
+  // make sure no zeros are stored
+  remove_zeros();
   }
 
 
@@ -557,8 +598,7 @@ SpMat<eT>::operator=(const eT val)
   if(val != eT(0))
     {
     // Resize to 1x1 then set that to the right value.
-    init(1, 1); // Sets col_ptrs to 0.
-    mem_resize(1); // One element.
+    init(1, 1, 1); // Sets col_ptrs to 0.
     
     // Manually set element.
     access::rw(values[0]) = val;
@@ -774,7 +814,7 @@ SpMat<eT>::SpMat
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element is set when mem_resize is called
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -801,8 +841,7 @@ SpMat<eT>::SpMat
   const uword l_n_cols = X.n_cols;
   
   // Set size of matrix correctly.
-  init(l_n_rows, l_n_cols);
-  mem_resize(n_unique(X, Y, op_n_unique_count()));
+  init_cold(l_n_rows, l_n_cols, n_unique(X, Y, op_n_unique_count()));
   
   // Now on a second iteration, fill it.
   typename SpMat<T>::const_iterator x_it  = X.begin();
@@ -866,7 +905,7 @@ SpMat<eT>::SpMat(const Base<eT, T1>& x)
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element is set when mem_resize is called in operator=()
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -892,8 +931,6 @@ SpMat<eT>::operator=(const Base<eT, T1>& expr)
   const uword x_n_cols = x.n_cols;
   const uword x_n_elem = x.n_elem;
   
-  init(x_n_rows, x_n_cols);
-  
   // Count number of nonzero elements in base object.
   uword n = 0;
   
@@ -904,9 +941,9 @@ SpMat<eT>::operator=(const Base<eT, T1>& expr)
     n += (x_mem[i] != eT(0)) ? uword(1) : uword(0);
     }
   
-  mem_resize(n);
+  init(x_n_rows, x_n_cols, n);
   
-  // Now the memory is resized correctly; add nonzero elements.
+  // Now the memory is resized correctly; set nonzero elements.
   n = 0;
   for(uword j = 0; j < x_n_cols; ++j)
   for(uword i = 0; i < x_n_rows; ++i)
@@ -982,7 +1019,7 @@ SpMat<eT>::operator*=(const Base<eT, T1>& y)
   // a fairly valid assumption), each row with any nonzero elements in it (in this
   // matrix) implies an entire nonzero column.  Therefore, we iterate over all
   // the row_indices and count the number of rows with any elements in them
-  // (using the quasi-linked-list idea from SYMBMM -- see operator_times.hpp).
+  // (using the quasi-linked-list idea from SYMBMM -- see spglue_times_meat.hpp).
   podarray<uword> index(n_rows);
   index.fill(n_rows); // Fill with invalid links.
 
@@ -1004,9 +1041,7 @@ SpMat<eT>::operator*=(const Base<eT, T1>& y)
     last_index = index[last_index];
     }
 
-  SpMat<eT> z(n_rows, p.get_n_cols());
-
-  z.mem_resize(nonzero_rows * p.get_n_cols()); // upper bound on size
+  SpMat<eT> z(arma_reserve_indicator(), n_rows, p.get_n_cols(), (nonzero_rows * p.get_n_cols())); // upper bound on size
 
   // Now we have to fill all the elements using a modification of the NUMBMM algorithm.
   uword cur_pos = 0;
@@ -1113,9 +1148,8 @@ SpMat<eT>::operator%=(const Base<eT, T1>& x)
     ++it;
     }
   
-  SpMat<eT> tmp(n_rows, n_cols);
-  tmp.mem_resize(new_n_nonzero);
-
+  SpMat<eT> tmp(arma_reserve_indicator(), n_rows, n_cols, new_n_nonzero);
+  
   const_iterator c_it     = begin();
   const_iterator c_it_end = end();
   
@@ -1314,7 +1348,7 @@ SpMat<eT>::SpMat(const SpSubview<eT>& X)
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element added when mem_resize is called
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -1334,18 +1368,11 @@ SpMat<eT>::operator=(const SpSubview<eT>& X)
   
   X.m.sync_csc();
   
-  const uword in_n_cols = X.n_cols;
-  const uword in_n_rows = X.n_rows;
-  
   const bool alias = (this == &(X.m));
 
   if(alias == false)
     {
-    init(in_n_rows, in_n_cols);
-
-    const uword x_n_nonzero = X.n_nonzero;
-
-    mem_resize(x_n_nonzero);
+    init(X.n_rows, X.n_cols, X.n_nonzero);
 
     typename SpSubview<eT>::const_iterator it     = X.begin();
     typename SpSubview<eT>::const_iterator it_end = X.end();
@@ -1477,7 +1504,7 @@ SpMat<eT>::SpMat(const spdiagview<eT>& X)
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element added when mem_resize is called
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -1721,7 +1748,7 @@ SpMat<eT>::SpMat(const SpGlue<T1, T2, spglue_type>& X)
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element set in application of sparse glue
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -1746,7 +1773,7 @@ SpMat<eT>::SpMat(const mtSpOp<eT, T1, spop_type>& X)
   , n_elem(0)
   , n_nonzero(0)
   , vec_state(0)
-  , values(NULL) // extra element set in application of sparse glue
+  , values(NULL)
   , row_indices(NULL)
   , col_ptrs(NULL)
   {
@@ -2876,8 +2903,8 @@ SpMat<eT>::shed_cols(const uword in_col1, const uword in_col2)
 
   if (diff > 0)
     {
-    eT*    new_values      = memory::acquire_chunked<eT>   (n_nonzero - diff);
-    uword* new_row_indices = memory::acquire_chunked<uword>(n_nonzero - diff);
+    eT*    new_values      = memory::acquire<eT>   (n_nonzero - diff);
+    uword* new_row_indices = memory::acquire<uword>(n_nonzero - diff);
 
     // Copy first part.
     if (col_beg != 0)
@@ -2893,8 +2920,8 @@ SpMat<eT>::shed_cols(const uword in_col1, const uword in_col2)
       arrayops::copy(new_row_indices + col_beg, row_indices + col_end, n_nonzero - col_end);
       }
 
-    memory::release(values);
-    memory::release(row_indices);
+    if(values)       { memory::release(access::rw(values));      }
+    if(row_indices)  { memory::release(access::rw(row_indices)); }
 
     access::rw(values)      = new_values;
     access::rw(row_indices) = new_row_indices;
@@ -2922,7 +2949,7 @@ SpMat<eT>::shed_cols(const uword in_col1, const uword in_col2)
     new_col_ptrs[cur_col] = col_ptrs[i] - diff;
     }
   
-  memory::release(col_ptrs);
+  if(col_ptrs)  { memory::release(access::rw(col_ptrs)); }
   access::rw(col_ptrs) = new_col_ptrs;
   
   // We update the element and column counts, and we're done.
@@ -3143,6 +3170,102 @@ SpMat<eT>::is_finite() const
   sync_csc();
   
   return arrayops::is_finite(values, n_nonzero);
+  }
+
+
+
+template<typename eT>
+inline
+arma_warn_unused
+bool
+SpMat<eT>::is_symmetric() const
+  {
+  arma_extra_debug_sigprint();
+  
+  const SpMat<eT>& A = (*this);
+  
+  if(A.n_rows != A.n_cols)  { return false; }
+  
+  const SpMat<eT> tmp = A - A.st();
+  
+  return (tmp.n_nonzero == uword(0));
+  }
+
+
+
+template<typename eT>
+inline
+arma_warn_unused
+bool
+SpMat<eT>::is_symmetric(const typename get_pod_type<elem_type>::result tol) const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  if(tol == T(0))  { return (*this).is_symmetric(); }
+  
+  arma_debug_check( (tol < T(0)), "is_symmetric(): parameter 'tol' must be >= 0" );
+  
+  const SpMat<eT>& A = (*this);
+  
+  if(A.n_rows != A.n_cols)  { return false; }
+  
+  const T norm_A = as_scalar( arma::max(sum(abs(A), 1), 0) );
+  
+  if(norm_A == T(0))  { return true; }
+  
+  const T norm_A_Ast = as_scalar( arma::max(sum(abs(A - A.st()), 1), 0) );
+  
+  return ( (norm_A_Ast / norm_A) <= tol );
+  }
+
+
+
+template<typename eT>
+inline
+arma_warn_unused
+bool
+SpMat<eT>::is_hermitian() const
+  {
+  arma_extra_debug_sigprint();
+  
+  const SpMat<eT>& A = (*this);
+  
+  if(A.n_rows != A.n_cols)  { return false; }
+  
+  const SpMat<eT> tmp = A - A.t();
+  
+  return (tmp.n_nonzero == uword(0));
+  }
+
+
+
+template<typename eT>
+inline
+arma_warn_unused
+bool
+SpMat<eT>::is_hermitian(const typename get_pod_type<elem_type>::result tol) const
+  {
+  arma_extra_debug_sigprint();
+  
+  typedef typename get_pod_type<eT>::result T;
+  
+  if(tol == T(0))  { return (*this).is_hermitian(); }
+  
+  arma_debug_check( (tol < T(0)), "is_hermitian(): parameter 'tol' must be >= 0" );
+  
+  const SpMat<eT>& A = (*this);
+  
+  if(A.n_rows != A.n_cols)  { return false; }
+  
+  const T norm_A = as_scalar( arma::max(sum(abs(A), 1), 0) );
+  
+  if(norm_A == T(0))  { return true; }
+  
+  const T norm_A_At = as_scalar( arma::max(sum(abs(A - A.t()), 1), 0) );
+  
+  return ( (norm_A_At / norm_A) <= tol );
   }
 
 
@@ -3655,10 +3778,10 @@ SpMat<eT>::reshape(const uword in_rows, const uword in_cols)
   uword* new_col_ptrs    = memory::acquire<uword>(in_cols + 2);
   new_col_ptrs[in_cols + 1] = std::numeric_limits<uword>::max();
   
-  uword* new_row_indices = memory::acquire_chunked<uword>(n_nonzero + 1);
+  uword* new_row_indices = memory::acquire<uword>(n_nonzero + 1);
   access::rw(new_row_indices[n_nonzero]) = 0;
   
-  arrayops::inplace_set(new_col_ptrs, uword(0), in_cols + 1);
+  arrayops::fill_zeros(new_col_ptrs, in_cols + 1);
   
   const_iterator it     = begin();
   const_iterator it_end = end();
@@ -3677,11 +3800,11 @@ SpMat<eT>::reshape(const uword in_rows, const uword in_cols)
     }
   
   // Copy the new row indices.
-  memory::release(row_indices);
-  access::rw(row_indices) = new_row_indices;
+  if(row_indices)  { memory::release(access::rw(row_indices)); }
+  if(col_ptrs)     { memory::release(access::rw(col_ptrs));    } 
   
-  memory::release(col_ptrs);
-  access::rw(col_ptrs) = new_col_ptrs;
+  access::rw(row_indices) = new_row_indices;
+  access::rw(col_ptrs)    = new_col_ptrs;
   
   // Now set the size.
   access::rw(n_rows) = in_rows;
@@ -3949,9 +4072,7 @@ SpMat<eT>::eye(const uword in_rows, const uword in_cols)
   
   const uword N = (std::min)(in_rows, in_cols);
   
-  zeros(in_rows, in_cols);
-  
-  mem_resize(N);
+  init(in_rows, in_cols, N);
   
   arrayops::inplace_set(access::rwp(values), eT(1), N);
   
@@ -4026,21 +4147,18 @@ SpMat<eT>::sprandu(const uword in_rows, const uword in_cols, const double densit
   
   arma_debug_check( ( (density < double(0)) || (density > double(1)) ), "sprandu(): density must be in the [0,1] interval" );
   
-  zeros(in_rows, in_cols);
+  const uword new_n_nonzero = uword(density * double(in_rows) * double(in_cols) + 0.5);
   
-  mem_resize( uword(density * double(in_rows) * double(in_cols) + 0.5) );
+  init(in_rows, in_cols, new_n_nonzero);
   
-  if(n_nonzero == 0)
-    {
-    return *this;
-    }
+  if(new_n_nonzero == 0)  { return *this; }
   
-  arma_rng::randu<eT>::fill( access::rwp(values), n_nonzero );
+  arma_rng::randu<eT>::fill( access::rwp(values), new_n_nonzero );
   
-  uvec indices = linspace<uvec>( 0u, in_rows*in_cols-1, n_nonzero );
+  uvec indices = linspace<uvec>( 0u, in_rows*in_cols-1, new_n_nonzero );
   
   // perturb the indices
-  for(uword i=1; i < n_nonzero-1; ++i)
+  for(uword i=1; i < new_n_nonzero-1; ++i)
     {
     const uword index_left  = indices[i-1];
     const uword index_right = indices[i+1];
@@ -4077,7 +4195,7 @@ SpMat<eT>::sprandu(const uword in_rows, const uword in_cols, const double densit
     ++count;
     }
   
-  if(cur_index != n_nonzero)
+  if(cur_index != new_n_nonzero)
     {
     // Fix size to correct size.
     mem_resize(cur_index);
@@ -4115,21 +4233,18 @@ SpMat<eT>::sprandn(const uword in_rows, const uword in_cols, const double densit
   
   arma_debug_check( ( (density < double(0)) || (density > double(1)) ), "sprandn(): density must be in the [0,1] interval" );
   
-  zeros(in_rows, in_cols);
+  const uword new_n_nonzero = uword(density * double(in_rows) * double(in_cols) + 0.5);
   
-  mem_resize( uword(density * double(in_rows) * double(in_cols) + 0.5) );
+  init(in_rows, in_cols, new_n_nonzero);
   
-  if(n_nonzero == 0)
-    {
-    return *this;
-    }
+  if(new_n_nonzero == 0)  { return *this; }
   
-  arma_rng::randn<eT>::fill( access::rwp(values), n_nonzero );
+  arma_rng::randn<eT>::fill( access::rwp(values), new_n_nonzero );
   
-  uvec indices = linspace<uvec>( 0u, in_rows*in_cols-1, n_nonzero );
+  uvec indices = linspace<uvec>( 0u, in_rows*in_cols-1, new_n_nonzero );
   
   // perturb the indices
-  for(uword i=1; i < n_nonzero-1; ++i)
+  for(uword i=1; i < new_n_nonzero-1; ++i)
     {
     const uword index_left  = indices[i-1];
     const uword index_right = indices[i+1];
@@ -4166,7 +4281,7 @@ SpMat<eT>::sprandn(const uword in_rows, const uword in_cols, const double densit
     ++count;
     }
   
-  if(cur_index != n_nonzero)
+  if(cur_index != new_n_nonzero)
     {
     // Fix size to correct size.
     mem_resize(cur_index);
@@ -4216,6 +4331,18 @@ SpMat<eT>::reset()
       init(1, 0);
       break;
     }
+  }
+
+
+
+template<typename eT>
+inline
+void
+SpMat<eT>::reserve(const uword in_rows, const uword in_cols, const uword new_n_nonzero)
+  {
+  arma_extra_debug_sigprint();
+  
+  init(in_rows, in_cols, new_n_nonzero);
   }
 
 
@@ -4520,11 +4647,29 @@ SpMat<eT>::quiet_load(std::istream& is, const file_type type)
 template<typename eT>
 inline
 void
-SpMat<eT>::init(uword in_rows, uword in_cols)
+SpMat<eT>::init(uword in_rows, uword in_cols, const uword new_n_nonzero)
   {
   arma_extra_debug_sigprint();
   
   invalidate_cache(); // placed here, as init() is used during matrix modification
+  
+  // Clean out the existing memory.
+  if(values     )  { memory::release(access::rw(values));      }
+  if(row_indices)  { memory::release(access::rw(row_indices)); }
+  if(col_ptrs   )  { memory::release(access::rw(col_ptrs));    }
+  
+  init_cold(in_rows, in_cols, new_n_nonzero);
+  }
+
+
+
+template<typename eT>
+inline
+void
+arma_cold
+SpMat<eT>::init_cold(uword in_rows, uword in_cols, const uword new_n_nonzero)
+  {
+  arma_extra_debug_sigprint();
   
   // Verify that we are allowed to do this.
   if(vec_state > 0)
@@ -4558,35 +4703,25 @@ SpMat<eT>::init(uword in_rows, uword in_cols)
       error_message
     );
   
-  // Clean out the existing memory.
-  if (values)
-    {
-    memory::release(values);
-    memory::release(row_indices);
-    }
+  access::rw(col_ptrs)    = memory::acquire<uword>(in_cols + 2);
+  access::rw(values)      = memory::acquire<eT>   (new_n_nonzero + 1);
+  access::rw(row_indices) = memory::acquire<uword>(new_n_nonzero + 1);
   
-  access::rw(values)      = memory::acquire_chunked<eT>   (1);
-  access::rw(row_indices) = memory::acquire_chunked<uword>(1);
+  // fill column pointers with 0,
+  // except for the last element which contains the maximum possible element
+  // (so iterators terminate correctly).
+  arrayops::fill_zeros(access::rwp(col_ptrs), in_cols + 1);
   
-  access::rw(values[0])      = 0;
-  access::rw(row_indices[0]) = 0;
+  access::rw(col_ptrs[in_cols + 1]) = std::numeric_limits<uword>::max();
   
-  memory::release(col_ptrs);
+  access::rw(     values[new_n_nonzero]) = 0;
+  access::rw(row_indices[new_n_nonzero]) = 0;
   
   // Set the new size accordingly.
   access::rw(n_rows)    = in_rows;
   access::rw(n_cols)    = in_cols;
   access::rw(n_elem)    = (in_rows * in_cols);
-  access::rw(n_nonzero) = 0;
-  
-  // Try to allocate the column pointers, filling them with 0,
-  // except for the last element which contains the maximum possible element
-  // (so iterators terminate correctly).
-  access::rw(col_ptrs) = memory::acquire<uword>(in_cols + 2);
-  
-  arrayops::inplace_set(access::rwp(col_ptrs), uword(0), in_cols + 1);
-  
-  access::rw(col_ptrs[in_cols + 1]) = std::numeric_limits<uword>::max();
+  access::rw(n_nonzero) = new_n_nonzero;
   }
 
 
@@ -4630,29 +4765,42 @@ SpMat<eT>::init(const SpMat<eT>& x)
   {
   arma_extra_debug_sigprint();
   
-  // Ensure we are not initializing to ourselves.
-  if (this != &x)
-    {
-    x.sync_csc();
-    
-    init(x.n_rows, x.n_cols);
-
-    // values and row_indices may not be null.
-    if (values != NULL)
+  if(this == &x)  { return; }
+  
+  bool init_done = false;
+  
+  #if defined(ARMA_USE_OPENMP)
+    if(x.sync_state == 1)
       {
-      memory::release(values);
-      memory::release(row_indices);
+      #pragma omp critical
+      if(x.sync_state == 1)
+        {
+        (*this).init(x.cache);
+        init_done = true;
+        }
       }
-
-    access::rw(values)      = memory::acquire_chunked<eT>   (x.n_nonzero + 1);
-    access::rw(row_indices) = memory::acquire_chunked<uword>(x.n_nonzero + 1);
-
-    // Now copy over the elements.
-    arrayops::copy(access::rwp(values),      x.values,      x.n_nonzero + 1);
-    arrayops::copy(access::rwp(row_indices), x.row_indices, x.n_nonzero + 1);
-    arrayops::copy(access::rwp(col_ptrs),    x.col_ptrs,    x.n_cols + 1);
-    
-    access::rw(n_nonzero) = x.n_nonzero;
+  #elif defined(ARMA_USE_CXX11)
+    if(x.sync_state == 1)
+      {
+      x.cache_mutex.lock();
+      if(x.sync_state == 1)
+        {
+        (*this).init(x.cache);
+        init_done = true;
+        }
+      x.cache_mutex.unlock();
+      }
+  #else
+    if(x.sync_state == 1)
+      {
+      (*this).init(x.cache);
+      init_done = true;
+      }
+  #endif
+  
+  if(init_done == false)
+    {
+    (*this).init_simple(x);
     }
   }
 
@@ -4669,11 +4817,7 @@ SpMat<eT>::init(const MapMat<eT>& x)
   const uword x_n_cols = x.n_cols;
   const uword x_n_nz   = x.get_n_nonzero();
   
-  init(x_n_rows, x_n_cols);
-  
-  mem_resize(x_n_nz);
-  
-  arrayops::inplace_set(access::rwp(col_ptrs), uword(0), x_n_cols + 1);
+  init(x_n_rows, x_n_cols, x_n_nz);
   
   typename MapMat<eT>::map_type& x_map_ref = *(x.map_ptr);
   
@@ -4756,6 +4900,24 @@ SpMat<eT>::init(const MapMat<eT>& x)
 template<typename eT>
 inline
 void
+SpMat<eT>::init_simple(const SpMat<eT>& x)
+  {
+  arma_extra_debug_sigprint();
+  
+  if(this == &x)  { return; }
+  
+  init(x.n_rows, x.n_cols, x.n_nonzero);
+  
+  if(x.values     )  { arrayops::copy(access::rwp(values),      x.values,      x.n_nonzero + 1); }
+  if(x.row_indices)  { arrayops::copy(access::rwp(row_indices), x.row_indices, x.n_nonzero + 1); }
+  if(x.col_ptrs   )  { arrayops::copy(access::rwp(col_ptrs),    x.col_ptrs,    x.n_cols    + 1); }
+  }
+
+
+
+template<typename eT>
+inline
+void
 SpMat<eT>::init_batch_std(const Mat<uword>& locs, const Mat<eT>& vals, const bool sort_locations)
   {
   arma_extra_debug_sigprint();
@@ -4764,7 +4926,7 @@ SpMat<eT>::init_batch_std(const Mat<uword>& locs, const Mat<eT>& vals, const boo
   mem_resize(vals.n_elem);
   
   // Reset column pointers to zero.
-  arrayops::inplace_set(access::rwp(col_ptrs), uword(0), n_cols + 1);
+  arrayops::fill_zeros(access::rwp(col_ptrs), n_cols + 1);
   
   bool actually_sorted = true;
   
@@ -4907,7 +5069,7 @@ SpMat<eT>::init_batch_add(const Mat<uword>& locs, const Mat<eT>& vals, const boo
     }
   
   // Reset column pointers to zero.
-  arrayops::inplace_set(access::rwp(col_ptrs), uword(0), n_cols + 1);
+  arrayops::fill_zeros(access::rwp(col_ptrs), n_cols + 1);
   
   bool actually_sorted = true;
   
@@ -5084,7 +5246,7 @@ SpMat<eT>::SpMat(const arma_vec_indicator&, const uword in_vec_state)
   const uword in_n_rows = (in_vec_state == 2) ? 1 : 0;
   const uword in_n_cols = (in_vec_state == 1) ? 1 : 0;
   
-  init(in_n_rows, in_n_cols);
+  init_cold(in_n_rows, in_n_cols);
   }
 
 
@@ -5104,7 +5266,7 @@ SpMat<eT>::SpMat(const arma_vec_indicator&, const uword in_n_rows, const uword i
   {
   arma_extra_debug_sigprint_this(this);
   
-  init(in_n_rows, in_n_cols);
+  init_cold(in_n_rows, in_n_cols);
   }
 
 
@@ -5118,54 +5280,32 @@ SpMat<eT>::mem_resize(const uword new_n_nonzero)
   
   invalidate_cache();  // placed here, as mem_resize() is used during matrix modification
   
-  if(n_nonzero != new_n_nonzero)
+  if(n_nonzero == new_n_nonzero)  { return; }
+  
+  eT*    new_values      = memory::acquire<eT>   (new_n_nonzero + 1);
+  uword* new_row_indices = memory::acquire<uword>(new_n_nonzero + 1);
+  
+  if( (n_nonzero > 0 ) && (new_n_nonzero > 0) )
     {
-    if(new_n_nonzero == 0)
-      {
-      memory::release(values);
-      memory::release(row_indices);
-      
-      access::rw(values)      = memory::acquire_chunked<eT>   (1);
-      access::rw(row_indices) = memory::acquire_chunked<uword>(1);
-      
-      access::rw(     values[0]) = 0;
-      access::rw(row_indices[0]) = 0;
-      }
-    else
-      {
-      // Figure out the actual amount of memory currently allocated.
-      // NOTE: this relies on memory::acquire_chunked() being used for the 'values' and 'row_indices' arrays
-      const uword n_alloc = memory::enlarge_to_mult_of_chunksize(n_nonzero);
-      
-      if(n_alloc < new_n_nonzero)
-        {
-        eT*    new_values      = memory::acquire_chunked<eT>   (new_n_nonzero + 1);
-        uword* new_row_indices = memory::acquire_chunked<uword>(new_n_nonzero + 1);
-        
-        if(n_nonzero > 0)
-          {
-          // Copy old elements.
-          uword copy_len = std::min(n_nonzero, new_n_nonzero);
-          
-          arrayops::copy(new_values,      values,      copy_len);
-          arrayops::copy(new_row_indices, row_indices, copy_len);
-          }
-        
-        memory::release(values);
-        memory::release(row_indices);
-        
-        access::rw(values)      = new_values;
-        access::rw(row_indices) = new_row_indices;
-        }
-      
-      // Set the "fake end" of the matrix by setting the last value and row index to 0.
-      // This helps the iterators work correctly.
-      access::rw(     values[new_n_nonzero]) = 0;
-      access::rw(row_indices[new_n_nonzero]) = 0;
-      }
+    // Copy old elements.
+    uword copy_len = (std::min)(n_nonzero, new_n_nonzero);
     
-    access::rw(n_nonzero) = new_n_nonzero;
+    arrayops::copy(new_values,      values,      copy_len);
+    arrayops::copy(new_row_indices, row_indices, copy_len);
     }
+  
+  if(values)       { memory::release(access::rw(values));      }
+  if(row_indices)  { memory::release(access::rw(row_indices)); }
+  
+  access::rw(values)      = new_values;
+  access::rw(row_indices) = new_row_indices;
+  
+  // Set the "fake end" of the matrix by setting the last value and row index to 0.
+  // This helps the iterators work correctly.
+  access::rw(     values[new_n_nonzero]) = 0;
+  access::rw(row_indices[new_n_nonzero]) = 0;
+  
+  access::rw(n_nonzero) = new_n_nonzero;
   }
 
 
@@ -5207,9 +5347,7 @@ SpMat<eT>::remove_zeros()
     {
     if(new_n_nonzero == 0)  { init(n_rows, n_cols); return; }
     
-    SpMat<eT> tmp(n_rows, n_cols);
-    
-    tmp.mem_resize(new_n_nonzero);
+    SpMat<eT> tmp(arma_reserve_indicator(), n_rows, n_cols, new_n_nonzero);
     
     uword new_index = 0;
     
@@ -5358,22 +5496,10 @@ SpMat<eT>::init_xform_mt(const SpBase<eT2,T1>& A, const Functor& func)
     
     if(void_ptr(this) != void_ptr(&x))
       {
-      init(x.n_rows, x.n_cols);
-      
-      // values and row_indices may not be null.
-      if(values != NULL)
-        {
-        memory::release(values);
-        memory::release(row_indices);
-        }
-      
-      access::rw(values)      = memory::acquire_chunked<eT>   (x.n_nonzero + 1);
-      access::rw(row_indices) = memory::acquire_chunked<uword>(x.n_nonzero + 1);
+      init(x.n_rows, x.n_cols, x.n_nonzero);
       
       arrayops::copy(access::rwp(row_indices), x.row_indices, x.n_nonzero + 1);
       arrayops::copy(access::rwp(col_ptrs),    x.col_ptrs,    x.n_cols    + 1);
-      
-      access::rw(n_nonzero) = x.n_nonzero;
       }
     
     
@@ -5399,9 +5525,7 @@ SpMat<eT>::init_xform_mt(const SpBase<eT2,T1>& A, const Functor& func)
     }
   else
     {
-    init(P.get_n_rows(), P.get_n_cols());
-    
-    mem_resize(P.get_n_nonzero());
+    init(P.get_n_rows(), P.get_n_cols(), P.get_n_nonzero());
     
     typename SpProxy<T1>::const_iterator_type it     = P.begin();
     typename SpProxy<T1>::const_iterator_type it_end = P.end();
@@ -5428,6 +5552,16 @@ SpMat<eT>::init_xform_mt(const SpBase<eT2,T1>& A, const Functor& func)
     
     if(has_zero)  { remove_zeros(); }
     }
+  }
+
+
+
+template<typename eT>
+arma_inline
+bool
+SpMat<eT>::is_alias(const SpMat<eT>& X) const
+  {
+  return (&X == this);
   }
 
 
@@ -5537,6 +5671,26 @@ SpMat<eT>::begin_col(const uword col_num) const
 template<typename eT>
 inline
 typename SpMat<eT>::col_iterator
+SpMat<eT>::begin_col_no_sync(const uword col_num)
+  {
+  return col_iterator(*this, 0, col_num);
+  }
+
+
+
+template<typename eT>
+inline
+typename SpMat<eT>::const_col_iterator
+SpMat<eT>::begin_col_no_sync(const uword col_num) const
+  {
+  return const_col_iterator(*this, 0, col_num);
+  }
+
+
+
+template<typename eT>
+inline
+typename SpMat<eT>::col_iterator
 SpMat<eT>::end_col(const uword col_num)
   {
   sync_csc();
@@ -5553,6 +5707,26 @@ SpMat<eT>::end_col(const uword col_num) const
   {
   sync_csc();
   
+  return const_col_iterator(*this, 0, col_num + 1);
+  }
+
+
+
+template<typename eT>
+inline
+typename SpMat<eT>::col_iterator
+SpMat<eT>::end_col_no_sync(const uword col_num)
+  {
+  return col_iterator(*this, 0, col_num + 1);
+  }
+
+
+
+template<typename eT>
+inline
+typename SpMat<eT>::const_col_iterator
+SpMat<eT>::end_col_no_sync(const uword col_num) const
+  {
   return const_col_iterator(*this, 0, col_num + 1);
   }
 
@@ -5711,92 +5885,14 @@ template<typename eT>
 inline
 arma_hot
 arma_warn_unused
-SpValProxy<SpMat<eT> >
-SpMat<eT>::get_value(const uword i)
-  {
-  // First convert to the actual location.
-  uword lcol = i / n_rows; // Integer division.
-  uword lrow = i % n_rows;
-
-  return get_value(lrow, lcol);
-  }
-
-
-
-template<typename eT>
-inline
-arma_hot
-arma_warn_unused
 eT
 SpMat<eT>::get_value(const uword i) const
   {
-  // First convert to the actual location.
-  uword lcol = i / n_rows; // Integer division.
-  uword lrow = i % n_rows;
-
-  return get_value(lrow, lcol);
-  }
-
-
-
-template<typename eT>
-inline
-arma_hot
-arma_warn_unused
-SpValProxy<SpMat<eT> >
-SpMat<eT>::get_value(const uword in_row, const uword in_col)
-  {
-  sync_csc();
+  const MapMat<eT>& const_cache = cache;  // declare as const for clarity of intent
   
-  const uword      col_offset = col_ptrs[in_col    ];
-  const uword next_col_offset = col_ptrs[in_col + 1];
+  // get the element from the cache if it has more recent data than CSC
   
-  const uword* start_ptr = &row_indices[     col_offset];
-  const uword*   end_ptr = &row_indices[next_col_offset];
-  
-  const uword* pos_ptr = std::lower_bound(start_ptr, end_ptr, in_row);  // binary search
-  
-  eT* val_ptr = NULL;
-  
-  if( (pos_ptr != end_ptr) && ((*pos_ptr) == in_row) )
-    {
-    const uword offset = pos_ptr - start_ptr;
-    const uword index  = offset + col_offset;
-    
-    val_ptr = &access::rw(values[index]);
-    }
-  
-  return SpValProxy< SpMat<eT> >(in_row, in_col, *this, val_ptr);
-  
-  
-  // // OLD METHOD - LINEAR SEARCH
-  // 
-  // sync_csc();
-  // 
-  // const uword colptr      = col_ptrs[in_col];
-  // const uword next_colptr = col_ptrs[in_col + 1];
-  // 
-  // // Step through the row indices to see if our element exists.
-  // for (uword i = colptr; i < next_colptr; ++i)
-  //   {
-  //   const uword row_index = row_indices[i];
-  //   
-  //   // First check that we have not stepped past it.
-  //   if (in_row < row_index) // If we have, then it doesn't exist: return 0.
-  //     {
-  //     return SpValProxy<SpMat<eT> >(in_row, in_col, *this); // Proxy for a zero value.
-  //     }
-  // 
-  //   // Now check if we are at the correct place.
-  //   if (in_row == row_index) // If we are, return a reference to the value.
-  //     {
-  //     return SpValProxy<SpMat<eT> >(in_row, in_col, *this, &access::rw(values[i]));
-  //     }
-  // 
-  //   }
-  // 
-  // // We did not find it, so it does not exist: return 0.
-  // return SpValProxy<SpMat<eT> >(in_row, in_col, *this);
+  return (sync_state == 1) ? const_cache.operator[](i) : get_value_csc(i);
   }
 
 
@@ -5808,8 +5904,38 @@ arma_warn_unused
 eT
 SpMat<eT>::get_value(const uword in_row, const uword in_col) const
   {
-  sync_csc();
+  const MapMat<eT>& const_cache = cache;  // declare as const for clarity of intent
   
+  // get the element from the cache if it has more recent data than CSC
+  
+  return (sync_state == 1) ? const_cache.at(in_row, in_col) : get_value_csc(in_row, in_col);
+  }
+
+
+
+template<typename eT>
+inline
+arma_hot
+arma_warn_unused
+eT
+SpMat<eT>::get_value_csc(const uword i) const
+  {
+  // First convert to the actual location.
+  uword lcol = i / n_rows; // Integer division.
+  uword lrow = i % n_rows;
+  
+  return get_value_csc(lrow, lcol);
+  }
+
+
+
+template<typename eT>
+inline
+arma_hot
+arma_warn_unused
+eT
+SpMat<eT>::get_value_csc(const uword in_row, const uword in_col) const
+  {
   const uword      col_offset = col_ptrs[in_col    ];
   const uword next_col_offset = col_ptrs[in_col + 1];
   
@@ -5820,7 +5946,7 @@ SpMat<eT>::get_value(const uword in_row, const uword in_col) const
   
   if( (pos_ptr != end_ptr) && ((*pos_ptr) == in_row) )
     {
-    const uword offset = pos_ptr - start_ptr;
+    const uword offset = uword(pos_ptr - start_ptr);
     const uword index  = offset + col_offset;
     
     return values[index];
@@ -5856,50 +5982,6 @@ SpMat<eT>::get_value(const uword in_row, const uword in_col) const
   // 
   // // We did not find it, so it does not exist: return 0.
   // return eT(0);
-  }
-
-
-
-/**
- * Given the index representing which of the nonzero values this is, return its
- * actual location, either in row/col or just the index.
- */
-template<typename eT>
-arma_hot
-arma_inline
-arma_warn_unused
-uword
-SpMat<eT>::get_position(const uword i) const
-  {
-  uword lrow, lcol;
-  
-  get_position(i, lrow, lcol);
-  
-  // Assemble the row/col into the element's location in the matrix.
-  return (lrow + n_rows * lcol);
-  }
-
-
-
-template<typename eT>
-arma_hot
-arma_inline
-void
-SpMat<eT>::get_position(const uword i, uword& row_of_i, uword& col_of_i) const
-  {
-  sync_csc();
-  
-  arma_debug_check((i >= n_nonzero), "SpMat::get_position(): index out of bounds");
-  
-  col_of_i = 0;
-  while (col_ptrs[col_of_i + 1] <= i)
-    {
-    col_of_i++;
-    }
-  
-  row_of_i = row_indices[i];
-  
-  return;
   }
 
 
@@ -5963,55 +6045,35 @@ SpMat<eT>::insert_element(const uword in_row, const uword in_col, const eT val)
     access::rw(col_ptrs[i])++; // We are only inserting one new element.
     }
   
+  const uword old_n_nonzero = n_nonzero;
   
-  // Figure out the actual amount of memory currently allocated
-  // NOTE: this relies on memory::acquire_chunked() being used for the 'values' and 'row_indices' arrays
-  const uword n_alloc = memory::enlarge_to_mult_of_chunksize(n_nonzero + 1);
+  access::rw(n_nonzero)++; // Add to count of nonzero elements.
   
-  // If possible, avoid time-consuming memory allocation 
-  if(n_alloc > (n_nonzero + 1))
+  // Allocate larger memory.
+  eT*    new_values      = memory::acquire<eT>   (n_nonzero + 1);
+  uword* new_row_indices = memory::acquire<uword>(n_nonzero + 1);
+  
+  // Copy things over, before the new element.
+  if (pos > 0)
     {
-    arrayops::copy_backwards(access::rwp(values)      + pos + 1, values      + pos, (n_nonzero - pos) + 1);
-    arrayops::copy_backwards(access::rwp(row_indices) + pos + 1, row_indices + pos, (n_nonzero - pos) + 1);
-    
-    // Insert the new element.
-    access::rw(values[pos])      = val;
-    access::rw(row_indices[pos]) = in_row;
-    
-    access::rw(n_nonzero)++;
+    arrayops::copy(new_values,      values,      pos);
+    arrayops::copy(new_row_indices, row_indices, pos);
     }
-  else
-    {
-    const uword old_n_nonzero = n_nonzero;
-    
-    access::rw(n_nonzero)++; // Add to count of nonzero elements.
-    
-    // Allocate larger memory.
-    eT*    new_values      = memory::acquire_chunked<eT>   (n_nonzero + 1);
-    uword* new_row_indices = memory::acquire_chunked<uword>(n_nonzero + 1);
-    
-    // Copy things over, before the new element.
-    if (pos > 0)
-      {
-      arrayops::copy(new_values,      values,      pos);
-      arrayops::copy(new_row_indices, row_indices, pos);
-      }
-    
-    // Insert the new element.
-    new_values[pos]      = val;
-    new_row_indices[pos] = in_row;
-    
-    // Copy the rest of things over (including the extra element at the end).
-    arrayops::copy(new_values      + pos + 1, values      + pos, (old_n_nonzero - pos) + 1);
-    arrayops::copy(new_row_indices + pos + 1, row_indices + pos, (old_n_nonzero - pos) + 1);
-    
-    // Assign new pointers.
-    memory::release(values);
-    memory::release(row_indices);
-
-    access::rw(values)      = new_values;
-    access::rw(row_indices) = new_row_indices;
-    }
+  
+  // Insert the new element.
+  new_values[pos]      = val;
+  new_row_indices[pos] = in_row;
+  
+  // Copy the rest of things over (including the extra element at the end).
+  arrayops::copy(new_values      + pos + 1, values      + pos, (old_n_nonzero - pos) + 1);
+  arrayops::copy(new_row_indices + pos + 1, row_indices + pos, (old_n_nonzero - pos) + 1);
+  
+  // Assign new pointers.
+  if(values)       { memory::release(access::rw(values));      }
+  if(row_indices)  { memory::release(access::rw(row_indices)); }
+  
+  access::rw(values)      = new_values;
+  access::rw(row_indices) = new_row_indices;
   
   return access::rw(values[pos]);
   }
@@ -6047,48 +6109,28 @@ SpMat<eT>::delete_element(const uword in_row, const uword in_col)
       {
       if (in_row == row_indices[pos])
         {
-        const uword old_n_nonzero = n_nonzero;
-        
         --access::rw(n_nonzero); // Remove one from the count of nonzero elements.
         
         // Found it.  Now remove it.
         
-        // Figure out the actual amount of memory currently allocated and the actual amount that will be required
-        // NOTE: this relies on memory::acquire_chunked() being used for the 'values' and 'row_indices' arrays
+        // Make new arrays.
+        eT*    new_values      = memory::acquire<eT>   (n_nonzero + 1);
+        uword* new_row_indices = memory::acquire<uword>(n_nonzero + 1);
         
-        const uword n_alloc     = memory::enlarge_to_mult_of_chunksize(old_n_nonzero + 1);
-        const uword n_alloc_mod = memory::enlarge_to_mult_of_chunksize(n_nonzero     + 1);
+        if (pos > 0)
+          {
+          arrayops::copy(new_values,      values,      pos);
+          arrayops::copy(new_row_indices, row_indices, pos);
+          }
         
-        // If possible, avoid time-consuming memory allocation
-        if(n_alloc_mod == n_alloc)
-          {
-          if (pos < n_nonzero)  // remember, we decremented n_nonzero
-            {
-            arrayops::copy_forwards(access::rwp(values)      + pos, values      + pos + 1, (n_nonzero - pos) + 1);
-            arrayops::copy_forwards(access::rwp(row_indices) + pos, row_indices + pos + 1, (n_nonzero - pos) + 1);
-            }
-          }
-        else
-          {
-          // Make new arrays.
-          eT*    new_values      = memory::acquire_chunked<eT>   (n_nonzero + 1);
-          uword* new_row_indices = memory::acquire_chunked<uword>(n_nonzero + 1);
-          
-          if (pos > 0)
-            {
-            arrayops::copy(new_values,      values,      pos);
-            arrayops::copy(new_row_indices, row_indices, pos);
-            }
-          
-          arrayops::copy(new_values      + pos, values      + pos + 1, (n_nonzero - pos) + 1);
-          arrayops::copy(new_row_indices + pos, row_indices + pos + 1, (n_nonzero - pos) + 1);
-          
-          memory::release(values);
-          memory::release(row_indices);
-          
-          access::rw(values)      = new_values;
-          access::rw(row_indices) = new_row_indices;
-          }
+        arrayops::copy(new_values      + pos, values      + pos + 1, (n_nonzero - pos) + 1);
+        arrayops::copy(new_row_indices + pos, row_indices + pos + 1, (n_nonzero - pos) + 1);
+        
+        if(values)       { memory::release(access::rw(values));      }
+        if(row_indices)  { memory::release(access::rw(row_indices)); }
+        
+        access::rw(values)      = new_values;
+        access::rw(row_indices) = new_row_indices;
         
         // And lastly, update all the column pointers (decrement by one).
         for (uword i = in_col + 1; i < n_cols + 1; i++)

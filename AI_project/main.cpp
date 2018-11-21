@@ -58,7 +58,6 @@ int main(int argc, char *argv[])
 	double *signal[Nch];
 
 	//frame ¥‹¿ß input
-	//2ch mic input
 	for (ch = 0; ch < Nch; ch++)
 	{
 		sprintf(file_name[ch], argv[ch + 1]);
@@ -96,7 +95,7 @@ int main(int argc, char *argv[])
 			}
 
 		}
-		proc->Process(Input);
+		proc->Process(Input, type);
 
 	}
 	for (ch = 0; ch < Nch; ch++)
