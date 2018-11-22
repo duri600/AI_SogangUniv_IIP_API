@@ -17,7 +17,7 @@ realtime_IVA *rtIVA;
 SNMF *m_snmf;
 SNMF *f_snmf;
 #if MAKE_FILE == 1
-FILE **nmf, **iva;
+FILE **NMF, **IVA;
 double **out_buff;
 short **IVA_out, **NMF_out;
 #endif
@@ -25,8 +25,8 @@ double **Input;
 double **basis;
 double **basis_a, **basis_b, **basis_an, **basis_bn, **basis_n;
 double **output, **output_temp, **input_temp;
-double *test_buffer1;
-double *test_buffer2;
+double *NMF_test_buffer1;
+double *NMF_test_buffer2;
 double **xx_lp, **InitCond, *XX_LP, *XX, **x, *LPF;
 double **vad_input_tmp;
 double lpf[256] = { 2.08798576826208e-06, 2.29954344986799e-05, -8.35216069314825e-06, -1.01421599408546e-05, 1.75825071131748e-05, 6.68506278162495e-07, -2.37466843099458e-05, 1.65292262827601e-05, 1.86603000155727e-05, -3.47276454619664e-05, 1.39791928852911e-06, 4.27828841291473e-05,	-3.24679407522093e-05, -2.99725427486013e-05, 6.15260248626211e-05, -6.94391496384368e-06, -7.03040741114150e-05, 5.82408009886648e-05, 4.39850560826189e-05, -0.000101231819760140, 1.84188639093049e-05,
@@ -88,8 +88,8 @@ ProcBuffers::ProcBuffers()
 		NMF_out[ch] = new short[frame_shift];
 #endif
 	}
-	test_buffer1 = new double[frame_shift];
-	test_buffer2 = new double[frame_shift];
+	NMF_test_buffer1 = new double[frame_shift];
+	NMF_test_buffer2 = new double[frame_shift];
 
 	for (ch = 0; ch < Nch; ch++)
 	{
@@ -101,14 +101,14 @@ ProcBuffers::ProcBuffers()
 
 #if MAKE_FILE == 1
 	char file_name[2][500];
-	nmf = new FILE*[Nch];
-	iva = new FILE*[Nch];
+	NMF = new FILE*[Nch];
+	IVA = new FILE*[Nch];
 	for (ch = 0; ch < Nch; ch++)
 	{
 		sprintf(file_name[0], ".\\output\\NMF_ch%d.pcm", ch + 1);
-		nmf[ch] = fopen(file_name[0], "wb");
+		NMF[ch] = fopen(file_name[0], "wb");
 		sprintf(file_name[0], ".\\output\\IVA_ch%d.pcm", ch + 1);
-		iva[ch] = fopen(file_name[0], "wb");
+		IVA[ch] = fopen(file_name[0], "wb");
 	}
 #endif
 	//down sampling & LPF
@@ -182,12 +182,12 @@ ProcBuffers::~ProcBuffers()
 	char file_name[2][500];
 	for (ch = 0; ch < Nch; ch++)
 	{
-		fclose(nmf[ch]);
+		fclose(NMF[ch]);
 		sprintf(file_name[0], ".\\output\\NMF_ch%d.pcm", ch + 1);
 		sprintf(file_name[1], ".\\output\\NMF_ch%d.wav", ch + 1);
 		pcm2wav(file_name[0], file_name[1], (long)(SamplingFreq));
 		remove(file_name[0]);
-		fclose(iva[ch]);
+		fclose(IVA[ch]);
 		sprintf(file_name[0], ".\\output\\IVA_ch%d.pcm", ch + 1);
 		sprintf(file_name[1], ".\\output\\IVA_ch%d.wav", ch + 1);
 		pcm2wav(file_name[0], file_name[1], (long)(SamplingFreq));
@@ -207,11 +207,11 @@ ProcBuffers::~ProcBuffers()
 	delete[] basis_b;
 	delete[] basis_an;
 	delete[] basis_bn;
-	delete[] test_buffer1;
-	delete[] test_buffer2;
+	delete[] NMF_test_buffer1;
+	delete[] NMF_test_buffer2;
 #if MAKE_FILE == 1
-	delete[] nmf;
-	delete[] iva;
+	delete[] NMF;
+	delete[] IVA;
 #endif
 	//Down Sampling & LPF
 	for (i = 0; i < Nch; i++)
@@ -324,7 +324,7 @@ void ProcBuffers::Process(double**input, int type)
 					out_buff[i][j] = output[i][j] * 32768.0;
 					IVA_out[i][j] = (short)(out_buff[i][j]);
 				}
-				fwrite(IVA_out[i], sizeof(short), BufferSize, iva[i]);
+				fwrite(IVA_out[i], sizeof(short), BufferSize, IVA[i]);
 			}
 #endif
 			for (ch = 0; ch < Nch; ch++) //NMF input
@@ -339,18 +339,18 @@ void ProcBuffers::Process(double**input, int type)
 				}
 			}
 
-			f_snmf->SNMF_test(output_temp[0], test_buffer1, basis_a, basis_bn);
+			f_snmf->SNMF_test(output_temp[0], NMF_test_buffer1, basis_a, basis_bn);
 
-			m_snmf->SNMF_test(output_temp[1], test_buffer2, basis_b, basis_an);
+			m_snmf->SNMF_test(output_temp[1], NMF_test_buffer2, basis_b, basis_an);
 
 #if MAKE_FILE == 1
 			for (i = 0; i < frame_shift; i++)
 			{
-				NMF_out[0][i] = (short)(test_buffer1[i]);
-				NMF_out[1][i] = (short)(test_buffer2[i]);
+				NMF_out[0][i] = (short)(NMF_test_buffer1[i]);
+				NMF_out[1][i] = (short)(NMF_test_buffer2[i]);
 			}
-			fwrite(NMF_out[0], sizeof(short), frame_shift, nmf[0]);
-			fwrite(NMF_out[1], sizeof(short), frame_shift, nmf[1]);
+			fwrite(NMF_out[0], sizeof(short), frame_shift, NMF[0]);
+			fwrite(NMF_out[1], sizeof(short), frame_shift, NMF[1]);
 #endif
 		}
 	}

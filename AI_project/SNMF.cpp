@@ -723,8 +723,6 @@ void SNMF::bnmf_sep_event_RT(double*input, double*d_frame, int l, double**basis_
 		g_lambda_dav[i] = p_alpha_d*g_lambda_dav[i] + (1 - p_alpha_d)*g_Dm_hat[i][0] * beta;
 	}
 
-
-
 	for (i = 0; i < size_basis; i++)
 	{
 		eta[i] = MAX(0.0031, (p_alpha_eta*g_Xm_tilde[i] + (1 - p_alpha_eta)*g_Xm_hat[i][0] * Q[i]) / MAX(g_lambda_dav[i], nonzerofloor));
