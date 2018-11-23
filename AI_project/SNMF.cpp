@@ -678,11 +678,8 @@ void SNMF::bnmf_sep_event_RT(double*input, double*d_frame, int l, double**basis_
 		A_R_d[i - R_x][0] = test_init_h[i][0];
 	}
 
-
 	matrix_mul(basis_x, A_R_x, size_basis, R_x, 1, g_Xm_hat);
 	matrix_mul(basis_n, A_R_d, size_basis, R_d, 1, g_Dm_hat);
-
-
 
 	//Calculate Block Sparsity
 
